@@ -441,6 +441,7 @@
         <span class="link" id="editBudgetLink">Настрой</span>
       </div>
       <div class="daily-card" id="dailyBudgetCard"></div>
+      <div class="daily-card" id="savingsNudge" hidden style="border-color:var(--accent);"></div>
     </section>
 
     <div class="stat-row">
@@ -549,8 +550,10 @@
     { name: "Дом", color: "#5B6FA8", budget: 0 },
     { name: "Забавления", color: "#B25A9E", budget: 0 },
     { name: "Здраве", color: "#AD3B31", budget: 0 },
+    { name: "Касички", color: "#3F7FA6", budget: 0 },
     { name: "Други", color: "#6B7C72", budget: 0 }
   ];
+  var SAVINGS_CATEGORY_NAME = "Касички";
 
   // ---------- Local storage layer ----------
   var LS = {
@@ -725,6 +728,7 @@
     document.getElementById("statCount").textContent = String(list.length);
 
     renderDailyBudget(total);
+    renderSavingsNudge(total);
     renderBudgetBars(list);
     renderRecent(list);
     renderExpensesList(list, total);
@@ -732,13 +736,29 @@
     renderStats(list);
   }
 
-  function renderDailyBudget(spentThisPeriod) {
-    var el = document.getElementById("dailyBudgetCard");
+  // Shared by the daily-budget card and the savings nudge.
+  function computeDailyAllowance(spentThisPeriod) {
     var income = state.budget.income || 0;
     var obligations = state.budget.obligations || [];
     var reserved = obligations.reduce(function (s, o) { return s + (o.amount || 0); }, 0);
+    if (!income && !reserved) return null;
 
-    if (!income && !reserved) {
+    var freeToSpend = income - reserved;
+    var leftNow = freeToSpend - spentThisPeriod;
+    var periodEnd = getPeriodEnd(state.periodStart);
+    var now = new Date(); now.setHours(0, 0, 0, 0);
+    var isCurrent = now >= state.periodStart && now < periodEnd;
+    var daysRemaining = isCurrent ? Math.max(1, Math.round((periodEnd - now) / 86400000)) : Math.round((periodEnd - state.periodStart) / 86400000);
+    var daily = leftNow / daysRemaining;
+
+    return { income: income, reserved: reserved, freeToSpend: freeToSpend, leftNow: leftNow, isCurrent: isCurrent, daysRemaining: daysRemaining, daily: daily, warn: daily < 0 };
+  }
+
+  function renderDailyBudget(spentThisPeriod) {
+    var el = document.getElementById("dailyBudgetCard");
+    var a = computeDailyAllowance(spentThisPeriod);
+
+    if (!a) {
       el.innerHTML =
         '<div class="caption">Добави заплатата си и задължителните разходи (наем, сметки и т.н.), за да виждаш колко можеш да харчиш на ден.</div>' +
         '<button class="setup-btn" id="setupBudgetBtn">Настрой бюджет</button>';
@@ -747,28 +767,38 @@
       return;
     }
 
-    var freeToSpend = income - reserved;
-    var leftNow = freeToSpend - spentThisPeriod;
-
-    var periodEnd = getPeriodEnd(state.periodStart);
-    var now = new Date(); now.setHours(0, 0, 0, 0);
-    var isCurrent = now >= state.periodStart && now < periodEnd;
-    var daysRemaining = isCurrent ? Math.max(1, Math.round((periodEnd - now) / 86400000)) : Math.round((periodEnd - state.periodStart) / 86400000);
-    var daily = leftNow / daysRemaining;
-    var warn = daily < 0;
-
     el.innerHTML =
       '<div class="top"><div>' +
-        '<div class="amount nums' + (warn ? " warn" : "") + '">' + fmt(daily) + '</div>' +
-        '<div class="caption">на ден' + (isCurrent ? " · остават " + daysRemaining + " дни" : "") + '</div>' +
+        '<div class="amount nums' + (a.warn ? " warn" : "") + '">' + fmt(a.daily) + '</div>' +
+        '<div class="caption">на ден' + (a.isCurrent ? " · остават " + a.daysRemaining + " дни" : "") + '</div>' +
       '</div></div>' +
       '<div class="breakdown">' +
-        '<div class="row"><span>Заплата</span><b class="nums">' + fmt(income) + '</b></div>' +
-        '<div class="row"><span>Заделено (наем, сметки…)</span><b class="nums">' + fmt(reserved) + '</b></div>' +
-        '<div class="row"><span>За харчене общо</span><b class="nums">' + fmt(freeToSpend) + '</b></div>' +
+        '<div class="row"><span>Заплата</span><b class="nums">' + fmt(a.income) + '</b></div>' +
+        '<div class="row"><span>Заделено (наем, сметки…)</span><b class="nums">' + fmt(a.reserved) + '</b></div>' +
+        '<div class="row"><span>За харчене общо</span><b class="nums">' + fmt(a.freeToSpend) + '</b></div>' +
         '<div class="row"><span>Похарчено до момента</span><b class="nums">' + fmt(spentThisPeriod) + '</b></div>' +
-        '<div class="row total' + (warn ? " warn" : "") + '"><span>Остатък</span><b class="nums">' + fmt(leftNow) + '</b></div>' +
+        '<div class="row total' + (a.warn ? " warn" : "") + '"><span>Остатък</span><b class="nums">' + fmt(a.leftNow) + '</b></div>' +
       '</div>';
+  }
+
+  function renderSavingsNudge(spentThisPeriod) {
+    var el = document.getElementById("savingsNudge");
+    if (!el) return;
+    var a = computeDailyAllowance(spentThisPeriod);
+    if (!a || !a.isCurrent || a.daily <= 0) { el.hidden = true; return; }
+
+    var todaySpent = state.expenses.filter(function (e) { return e.date === todayISO(); })
+      .reduce(function (s, e) { return s + e.amount; }, 0);
+    var leftover = a.daily - todaySpent;
+    if (leftover <= 0.5) { el.hidden = true; return; }
+
+    el.hidden = false;
+    el.innerHTML =
+      '<div class="caption">Днес похарчи <b style="color:var(--ink)">' + fmt(todaySpent) + '</b> от дневния лимит <b style="color:var(--ink)">' + fmt(a.daily) + '</b> — можеш да заделиш <b style="color:var(--accent)">' + fmt(leftover) + '</b> в Касички.</div>' +
+      '<button class="setup-btn" id="savingsNudgeBtn">Отдели ' + fmt(leftover) + ' в Касички</button>';
+    document.getElementById("savingsNudgeBtn").addEventListener("click", function () {
+      addToSavings(leftover);
+    });
   }
 
   function spentByCategory(list) {
@@ -920,6 +950,17 @@
     state.expenses.push(data);
     saveLS(LS.expenses, state.expenses);
     render();
+  }
+  // Logs the leftover daily allowance as a same-day entry under the
+  // "Касички" (savings) category, creating that category if it's missing.
+  function addToSavings(amount) {
+    var cat = state.categories.find(function (c) { return c.name === SAVINGS_CATEGORY_NAME; });
+    if (!cat) {
+      cat = { id: uid(), name: SAVINGS_CATEGORY_NAME, color: "#3F7FA6", budget: 0, order: state.categories.length };
+      state.categories.push(cat);
+      saveLS(LS.categories, state.categories);
+    }
+    addExpense({ amount: amount, categoryId: cat.id, date: todayISO(), note: "Заделено от дневния бюджет", createdAt: Date.now() });
   }
   function updateExpense(id, data) {
     var i = state.expenses.findIndex(function (e) { return e.id === id; });
