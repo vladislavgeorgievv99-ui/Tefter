@@ -415,7 +415,7 @@
 <body>
 
 <header class="top">
-  <div class="brand">Тефтер <span style="font-size:0.6rem; color:var(--ink-faint); font-weight:500; vertical-align:middle;">v4</span></div>
+  <div class="brand">Тефтер <span style="font-size:0.6rem; color:var(--ink-faint); font-weight:500; vertical-align:middle;">v5</span></div>
   <div class="month-switch">
     <button id="prevMonth" aria-label="Предишен период">‹</button>
     <span class="month-label nums" id="monthLabel">—</span>
@@ -530,11 +530,16 @@
 
   // iOS standalone mode misreports 100dvh/100vh; measure the real visible height in JS instead.
   function setAppHeight() {
-    document.documentElement.style.setProperty("--app-height", window.innerHeight + "px");
+    var h = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
+    document.documentElement.style.setProperty("--app-height", h + "px");
   }
   setAppHeight();
   window.addEventListener("resize", setAppHeight);
   window.addEventListener("orientationchange", function () { setTimeout(setAppHeight, 150); });
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", setAppHeight);
+    window.visualViewport.addEventListener("scroll", setAppHeight);
+  }
 
   var MONTHS =["януари","февруари","март","април","май","юни","юли","август","септември","октомври","ноември","декември"];
   var DAYS = ["нед","пон","вт","ср","чет","пет","съб"];
