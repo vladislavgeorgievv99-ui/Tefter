@@ -72,7 +72,7 @@
   }
 
   * { box-sizing: border-box; }
-  html, body { height: 100%; }
+  html, body { height: 100%; height: 100dvh; }
   body {
     margin: 0;
     background: var(--bg);
@@ -117,8 +117,9 @@
 
   main {
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
-    padding: 0 20px calc(env(safe-area-inset-bottom, 0px) + 100px);
+    padding: 0 20px 90px;
     -webkit-overflow-scrolling: touch;
   }
 
@@ -299,8 +300,6 @@
 
   /* ---- Nav ---- */
   nav.tabbar {
-    position: fixed;
-    left: 0; right: 0; bottom: 0;
     background: var(--surface);
     border-top: 1px solid var(--border);
     display: flex;
