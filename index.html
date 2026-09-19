@@ -544,12 +544,12 @@
   var MONTHS =["януари","февруари","март","април","май","юни","юли","август","септември","октомври","ноември","декември"];
   var DAYS = ["нед","пон","вт","ср","чет","пет","съб"];
   var DEFAULT_CATEGORIES = [
-    { name: "Храна", color: "#1F6F5C", budget: 400 },
-    { name: "Транспорт", color: "#B9852B", budget: 100 },
-    { name: "Дом", color: "#5B6FA8", budget: 300 },
-    { name: "Забавления", color: "#B25A9E", budget: 100 },
-    { name: "Здраве", color: "#AD3B31", budget: 80 },
-    { name: "Други", color: "#6B7C72", budget: 100 }
+    { name: "Храна", color: "#1F6F5C", budget: 0 },
+    { name: "Транспорт", color: "#B9852B", budget: 0 },
+    { name: "Дом", color: "#5B6FA8", budget: 0 },
+    { name: "Забавления", color: "#B25A9E", budget: 0 },
+    { name: "Здраве", color: "#AD3B31", budget: 0 },
+    { name: "Други", color: "#6B7C72", budget: 0 }
   ];
 
   // ---------- Local storage layer ----------
@@ -938,10 +938,21 @@
     render();
   }
   function savePayday(day) {
+    var carryOverBudget = state.budget;
     state.payday = day;
     saveLS(LS.settings, { payday: day });
     state.periodStart = periodStartForDate(new Date(), day);
     loadBudgetForPeriod();
+    // Changing the payday jumps to a different period key; carry the budget
+    // the viewer was just looking at into the new period so it doesn't look deleted.
+    var newKey = periodKey(state.periodStart);
+    var hasNewBudget = (state.budget.income || 0) > 0 || (state.budget.obligations || []).length > 0;
+    var hadOldBudget = (carryOverBudget.income || 0) > 0 || (carryOverBudget.obligations || []).length > 0;
+    if (!hasNewBudget && hadOldBudget) {
+      state.budgets[newKey] = carryOverBudget;
+      saveLS(LS.budgets, state.budgets);
+      state.budget = carryOverBudget;
+    }
     render();
   }
   function deleteExpensesInCurrentPeriod() {
