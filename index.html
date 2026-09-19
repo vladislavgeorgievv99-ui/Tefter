@@ -415,7 +415,7 @@
 <body>
 
 <header class="top">
-  <div class="brand">Тефтер <span style="font-size:0.6rem; color:var(--ink-faint); font-weight:500; vertical-align:middle;">v5</span></div>
+  <div class="brand">Тефтер <span id="verTag" style="font-size:0.6rem; color:var(--ink-faint); font-weight:500; vertical-align:middle;">v6</span></div>
   <div class="month-switch">
     <button id="prevMonth" aria-label="Предишен период">‹</button>
     <span class="month-label nums" id="monthLabel">—</span>
@@ -523,6 +523,7 @@
 </nav>
 
 <div id="sheetRoot"></div>
+<pre id="debugPanel" style="display:none; position:fixed; left:8px; right:8px; top:8px; z-index:9999; background:#000; color:#0f0; font-size:11px; padding:10px; border-radius:10px; white-space:pre-wrap; max-height:70vh; overflow:auto;"></pre>
 
 <script>
 (function () {
@@ -540,6 +541,55 @@
     window.visualViewport.addEventListener("resize", setAppHeight);
     window.visualViewport.addEventListener("scroll", setAppHeight);
   }
+
+  // ---------- Debug panel (tap version tag to toggle) ----------
+  function collectDebugInfo() {
+    var probe = document.createElement("div");
+    probe.style.cssText = "position:fixed; bottom:0; height:0; padding-bottom:env(safe-area-inset-bottom, 0px);";
+    document.body.appendChild(probe);
+    var safeBottom = getComputedStyle(probe).paddingBottom;
+    document.body.removeChild(probe);
+
+    var nav = document.querySelector("nav.tabbar");
+    var navRect = nav ? nav.getBoundingClientRect() : null;
+    var bodyRect = document.body.getBoundingClientRect();
+    var mainRect = document.querySelector("main").getBoundingClientRect();
+
+    var lines = [
+      "standalone (iOS): " + (window.navigator.standalone === true ? "YES" : window.navigator.standalone === false ? "no" : "n/a"),
+      "window.innerHeight: " + window.innerHeight,
+      "window.innerWidth: " + window.innerWidth,
+      "visualViewport.height: " + (window.visualViewport ? window.visualViewport.height : "n/a"),
+      "visualViewport.offsetTop: " + (window.visualViewport ? window.visualViewport.offsetTop : "n/a"),
+      "visualViewport.scale: " + (window.visualViewport ? window.visualViewport.scale : "n/a"),
+      "document.documentElement.clientHeight: " + document.documentElement.clientHeight,
+      "--app-height css var: " + getComputedStyle(document.documentElement).getPropertyValue("--app-height"),
+      "safe-area-inset-bottom (computed): " + safeBottom,
+      "devicePixelRatio: " + window.devicePixelRatio,
+      "body rect: top=" + bodyRect.top.toFixed(1) + " height=" + bodyRect.height.toFixed(1) + " bottom=" + bodyRect.bottom.toFixed(1),
+      "main rect: top=" + mainRect.top.toFixed(1) + " height=" + mainRect.height.toFixed(1) + " bottom=" + mainRect.bottom.toFixed(1),
+      "nav rect: " + (navRect ? "top=" + navRect.top.toFixed(1) + " height=" + navRect.height.toFixed(1) + " bottom=" + navRect.bottom.toFixed(1) : "not found"),
+      "screen.height: " + (window.screen ? window.screen.height : "n/a"),
+      "userAgent: " + navigator.userAgent
+    ];
+    return lines.join("\n");
+  }
+  (function () {
+    var tag = document.getElementById("verTag");
+    var panel = document.getElementById("debugPanel");
+    if (tag && panel) {
+      tag.style.cursor = "pointer";
+      tag.style.textDecoration = "underline";
+      tag.addEventListener("click", function () {
+        if (panel.style.display === "none") {
+          panel.textContent = collectDebugInfo();
+          panel.style.display = "block";
+        } else {
+          panel.style.display = "none";
+        }
+      });
+    }
+  })();
 
   var MONTHS =["януари","февруари","март","април","май","юни","юли","август","септември","октомври","ноември","декември"];
   var DAYS = ["нед","пон","вт","ср","чет","пет","съб"];
