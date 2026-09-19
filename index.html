@@ -557,7 +557,8 @@
     expenses: "ledger.expenses",
     categories: "ledger.categories",
     budgets: "ledger.budgets",
-    settings: "ledger.settings"
+    settings: "ledger.settings",
+    periodOverrides: "ledger.periodOverrides"
   };
   function loadLS(key, fallback) {
     try { var v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; }
@@ -572,6 +573,7 @@
     expenses: [],
     categories: [],
     budgets: {},
+    periodOverrides: {},
     payday: 1,
     periodStart: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
     budget: { income: 0, obligations: [] }
@@ -583,6 +585,10 @@
   function pad(n) { return String(n).padStart(2, "0"); }
   function isoDate(d) { return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); }
   function todayISO() { return isoDate(new Date()); }
+  function parseISODate(iso) {
+    var p = iso.split("-").map(Number);
+    return new Date(p[0], p[1] - 1, p[2]);
+  }
 
   // ---------- Pay-cycle periods (e.g. 20th to 20th) ----------
   function clampDay(y, m, day) {
@@ -603,9 +609,15 @@
     return new Date(ny, nm, clampDay(ny, nm, payday));
   }
   function periodKey(d) { return isoDate(d); }
-  function formatPeriodLabel(start, payday) {
-    if (payday === 1) return MONTHS[start.getMonth()] + " " + start.getFullYear();
-    var end = new Date(periodEndExclusive(start, payday).getTime() - 86400000);
+  // A period's end can be manually overridden (exact start/end you typed in);
+  // otherwise it's computed one month forward from the payday-of-month rule.
+  function getPeriodEnd(start) {
+    var override = state.periodOverrides[periodKey(start)];
+    if (override && override.end) return parseISODate(override.end);
+    return periodEndExclusive(start, state.payday);
+  }
+  function formatPeriodLabel(start) {
+    var end = new Date(getPeriodEnd(start).getTime() - 86400000);
     var sameYear = start.getFullYear() === end.getFullYear();
     var s = start.getDate() + " " + MONTHS[start.getMonth()].slice(0, 3) + ".";
     var e = end.getDate() + " " + MONTHS[end.getMonth()].slice(0, 3) + "." + (sameYear ? "" : " " + end.getFullYear());
@@ -651,7 +663,7 @@
     render();
   });
   document.getElementById("nextMonth").addEventListener("click", function () {
-    state.periodStart = periodEndExclusive(state.periodStart, state.payday);
+    state.periodStart = getPeriodEnd(state.periodStart);
     loadBudgetForPeriod();
     render();
   });
@@ -659,7 +671,7 @@
   // ---------- Derived data ----------
   function monthExpenses() {
     var startISO = isoDate(state.periodStart);
-    var endISO = isoDate(periodEndExclusive(state.periodStart, state.payday));
+    var endISO = isoDate(getPeriodEnd(state.periodStart));
     return state.expenses.filter(function (e) { return e.date && e.date >= startISO && e.date < endISO; })
       .sort(function (a, b) { return b.date.localeCompare(a.date) || b.createdAt - a.createdAt; });
   }
@@ -689,7 +701,7 @@
 
   // ---------- Rendering ----------
   function render() {
-    document.getElementById("monthLabel").textContent = formatPeriodLabel(state.periodStart, state.payday);
+    document.getElementById("monthLabel").textContent = formatPeriodLabel(state.periodStart);
 
     var list = monthExpenses();
     var total = list.reduce(function (s, e) { return s + e.amount; }, 0);
@@ -704,7 +716,7 @@
       sub.textContent = list.length ? list.length + " записа този период" : "Няма разходи още";
     }
 
-    var periodEnd = periodEndExclusive(state.periodStart, state.payday);
+    var periodEnd = getPeriodEnd(state.periodStart);
     var now = new Date(); now.setHours(0, 0, 0, 0);
     var daysInPeriod = Math.round((periodEnd - state.periodStart) / 86400000);
     var daysSoFar = now < state.periodStart ? daysInPeriod :
@@ -738,7 +750,7 @@
     var freeToSpend = income - reserved;
     var leftNow = freeToSpend - spentThisPeriod;
 
-    var periodEnd = periodEndExclusive(state.periodStart, state.payday);
+    var periodEnd = getPeriodEnd(state.periodStart);
     var now = new Date(); now.setHours(0, 0, 0, 0);
     var isCurrent = now >= state.periodStart && now < periodEnd;
     var daysRemaining = isCurrent ? Math.max(1, Math.round((periodEnd - now) / 86400000)) : Math.round((periodEnd - state.periodStart) / 86400000);
@@ -874,7 +886,7 @@
       periods.unshift(p);
     }
     var sums = periods.map(function (pStart) {
-      var sISO = isoDate(pStart), eISO = isoDate(periodEndExclusive(pStart, state.payday));
+      var sISO = isoDate(pStart), eISO = isoDate(getPeriodEnd(pStart));
       return state.expenses.filter(function (e) { return e.date && e.date >= sISO && e.date < eISO; })
         .reduce(function (s, e) { return s + e.amount; }, 0);
     });
@@ -947,19 +959,25 @@
     state.budget = data;
     render();
   }
-  function savePayday(day) {
+  // Manually set the exact start/end of the period being viewed. The end is
+  // stored as an override for that specific period (so irregular pay dates,
+  // e.g. 18th this month then 20th next, both work); the start's day-of-month
+  // also becomes the new default payday for periods that aren't overridden.
+  function saveCustomPeriod(newStart, newEndExclusive) {
     var carryOverBudget = state.budget;
-    state.payday = day;
-    saveLS(LS.settings, { payday: day });
-    state.periodStart = periodStartForDate(new Date(), day);
+    state.payday = newStart.getDate();
+    saveLS(LS.settings, { payday: state.payday });
+    state.periodStart = newStart;
+    var key = periodKey(newStart);
+    state.periodOverrides[key] = { end: isoDate(newEndExclusive) };
+    saveLS(LS.periodOverrides, state.periodOverrides);
     loadBudgetForPeriod();
-    // Changing the payday jumps to a different period key; carry the budget
-    // the viewer was just looking at into the new period so it doesn't look deleted.
-    var newKey = periodKey(state.periodStart);
+    // If this period has no budget yet but the one the viewer was just
+    // looking at did, carry it over so nothing looks deleted.
     var hasNewBudget = (state.budget.income || 0) > 0 || (state.budget.obligations || []).length > 0;
     var hadOldBudget = (carryOverBudget.income || 0) > 0 || (carryOverBudget.obligations || []).length > 0;
     if (!hasNewBudget && hadOldBudget) {
-      state.budgets[newKey] = carryOverBudget;
+      state.budgets[key] = carryOverBudget;
       saveLS(LS.budgets, state.budgets);
       state.budget = carryOverBudget;
     }
@@ -967,7 +985,7 @@
   }
   function deleteExpensesInCurrentPeriod() {
     var startISO = isoDate(state.periodStart);
-    var endISO = isoDate(periodEndExclusive(state.periodStart, state.payday));
+    var endISO = isoDate(getPeriodEnd(state.periodStart));
     state.expenses = state.expenses.filter(function (e) { return !(e.date && e.date >= startISO && e.date < endISO); });
     saveLS(LS.expenses, state.expenses);
     render();
@@ -1104,7 +1122,7 @@
     backdrop.innerHTML =
       '<div class="sheet">' +
         '<div class="sheet-handle"></div>' +
-        '<h3>Бюджет за ' + formatPeriodLabel(state.periodStart, state.payday) + '</h3>' +
+        '<h3>Бюджет за ' + formatPeriodLabel(state.periodStart) + '</h3>' +
         '<div class="field"><label>Заплата / приход</label><input class="amount-input" id="b-income" inputmode="decimal" placeholder="0.00" value="' + (state.budget.income || "") + '"></div>' +
         '<div class="field"><label>Задължителни разходи (наем, сметки…)</label>' +
           '<div class="oblig-labels"><span class="oblig-label-name">Име</span><span class="oblig-label-amt">Сума €</span><span class="oblig-label-spacer"></span></div>' +
@@ -1175,30 +1193,35 @@
     backdrop.innerHTML =
       '<div class="sheet">' +
         '<div class="sheet-handle"></div>' +
-        '<h3>Кога започва периодът ти</h3>' +
-        '<div class="field"><label>Ден от месеца на заплата</label><input class="amount-input" id="p-day" inputmode="numeric" placeholder="1" value="' + state.payday + '"></div>' +
-        '<div class="caption" style="color:var(--ink-faint); font-size:0.82rem;">Напр. 20 означава, че периодът ти тръгва от 20-о число и свършва на 19-о следващия месец. 1 означава обикновен календарен месец.</div>' +
+        '<h3>Кога започва и свършва периодът ти</h3>' +
+        '<div class="field"><label>Начало на текущия период</label><input type="date" id="p-start" value="' + isoDate(state.periodStart) + '"></div>' +
+        '<div class="field"><label>Край на текущия период</label><input type="date" id="p-end" value="' + isoDate(new Date(getPeriodEnd(state.periodStart).getTime() - 86400000)) + '"></div>' +
+        '<div class="caption" style="color:var(--ink-faint); font-size:0.82rem;">Задай точните дати, между които да пада този период (напр. деня на предишната и следващата заплата). Всеки следващ път, когато заплатата дойде на различно число, просто отвори пак това меню и оправи датите.</div>' +
         '<div class="sheet-actions">' +
           '<button class="btn ghost" id="p-cancel">Отказ</button>' +
           '<button class="btn primary" id="p-save">Запази</button>' +
         '</div>' +
         '<div style="border-top:1px solid var(--border); padding-top:14px; display:flex; flex-direction:column; gap:8px;">' +
           '<label style="font-size:0.78rem; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.05em;">Опасна зона</label>' +
-          '<button type="button" class="btn danger" id="p-clear-period" style="flex:none;">Изтрий разходите за ' + formatPeriodLabel(state.periodStart, state.payday) + '</button>' +
+          '<button type="button" class="btn danger" id="p-clear-period" style="flex:none;">Изтрий разходите за ' + formatPeriodLabel(state.periodStart) + '</button>' +
         '</div>' +
       '</div>';
     sheetRoot.appendChild(backdrop);
     backdrop.addEventListener("click", function (ev) { if (ev.target === backdrop) closeSheet(); });
     backdrop.querySelector("#p-cancel").addEventListener("click", closeSheet);
     backdrop.querySelector("#p-save").addEventListener("click", function () {
-      var day = parseInt(document.getElementById("p-day").value, 10);
-      if (!day || day < 1) day = 1;
-      if (day > 31) day = 31;
-      savePayday(day);
+      var startVal = document.getElementById("p-start").value;
+      var endVal = document.getElementById("p-end").value;
+      if (!startVal || !endVal) return;
+      var newStart = parseISODate(startVal);
+      var endInclusive = parseISODate(endVal);
+      if (endInclusive <= newStart) { window.alert("Краят трябва да е след началото."); return; }
+      var newEndExclusive = new Date(endInclusive.getTime() + 86400000);
+      saveCustomPeriod(newStart, newEndExclusive);
       closeSheet();
     });
     backdrop.querySelector("#p-clear-period").addEventListener("click", function () {
-      var label = formatPeriodLabel(state.periodStart, state.payday);
+      var label = formatPeriodLabel(state.periodStart);
       if (!window.confirm("Сигурен ли си, че искаш да изтриеш всички разходи за " + label + "? Това не може да се отмени.")) return;
       deleteExpensesInCurrentPeriod();
       closeSheet();
@@ -1215,6 +1238,7 @@
     state.categories = loadLS(LS.categories, []);
     state.expenses = loadLS(LS.expenses, []);
     state.budgets = loadLS(LS.budgets, {});
+    state.periodOverrides = loadLS(LS.periodOverrides, {});
     var settings = loadLS(LS.settings, { payday: 1 });
     state.payday = settings.payday || 1;
     state.periodStart = periodStartForDate(new Date(), state.payday);
