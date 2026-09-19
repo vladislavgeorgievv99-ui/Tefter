@@ -73,9 +73,11 @@
   }
 
   * { box-sizing: border-box; }
-  html, body { height: 100%; height: 100dvh; }
+  html { height: 100%; }
   body {
     margin: 0;
+    height: 100vh;
+    height: var(--app-height, 100vh);
     background: var(--bg);
     color: var(--ink);
     font-family: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, sans-serif;
@@ -526,7 +528,15 @@
 (function () {
   "use strict";
 
-  var MONTHS = ["януари","февруари","март","април","май","юни","юли","август","септември","октомври","ноември","декември"];
+  // iOS standalone mode misreports 100dvh/100vh; measure the real visible height in JS instead.
+  function setAppHeight() {
+    document.documentElement.style.setProperty("--app-height", window.innerHeight + "px");
+  }
+  setAppHeight();
+  window.addEventListener("resize", setAppHeight);
+  window.addEventListener("orientationchange", function () { setTimeout(setAppHeight, 150); });
+
+  var MONTHS =["януари","февруари","март","април","май","юни","юли","август","септември","октомври","ноември","декември"];
   var DAYS = ["нед","пон","вт","ср","чет","пет","съб"];
   var DEFAULT_CATEGORIES = [
     { name: "Храна", color: "#1F6F5C", budget: 400 },
