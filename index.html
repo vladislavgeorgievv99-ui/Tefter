@@ -978,8 +978,8 @@
         '<h3>' + (isEdit ? "Редактирай разход" : "Нов разход") + '</h3>' +
         '<div class="field"><label>Сума</label><input class="amount-input" id="f-amount" inputmode="decimal" placeholder="0.00" value="' + (isEdit ? existing.amount : "") + '"></div>' +
         '<div class="field"><label>Категория</label><div class="cat-pick" id="f-cats">' +
-          state.categories.map(function (c) {
-            var sel = isEdit && existing.categoryId === c.id;
+          state.categories.map(function (c, i) {
+            var sel = isEdit ? existing.categoryId === c.id : i === 0;
             return '<div class="chip' + (sel ? " selected" : "") + '" data-cat="' + c.id + '"><span class="dot" style="background:' + c.color + '"></span>' + escapeHtml(c.name) + '</div>';
           }).join("") + '</div></div>' +
         '<div class="field"><label>Дата</label><input type="date" id="f-date" value="' + (isEdit ? existing.date : todayISO()) + '"></div>' +
@@ -991,7 +991,7 @@
       '</div>';
     sheetRoot.appendChild(backdrop);
 
-    var selectedCat = isEdit ? existing.categoryId : null;
+    var selectedCat = isEdit ? existing.categoryId : (state.categories[0] && state.categories[0].id);
     backdrop.querySelectorAll("[data-cat]").forEach(function (chip) {
       chip.addEventListener("click", function () {
         backdrop.querySelectorAll("[data-cat]").forEach(function (c) { c.classList.remove("selected"); });
@@ -1008,10 +1008,16 @@
       closeSheet();
     });
     backdrop.querySelector("#f-save").addEventListener("click", function () {
-      var amount = parseFloat(String(document.getElementById("f-amount").value).replace(",", "."));
+      var amountInput = document.getElementById("f-amount");
+      var amount = parseFloat(String(amountInput.value).replace(",", "."));
       var date = document.getElementById("f-date").value || todayISO();
       var note = document.getElementById("f-note").value.trim();
-      if (!amount || amount <= 0 || !selectedCat) return;
+      if (!amount || amount <= 0) {
+        amountInput.style.borderColor = "var(--warn)";
+        amountInput.focus();
+        return;
+      }
+      if (!selectedCat) return;
       var data = { amount: amount, categoryId: selectedCat, date: date, note: note };
       if (isEdit) {
         data.createdAt = existing.createdAt;
