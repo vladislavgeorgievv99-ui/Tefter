@@ -614,6 +614,16 @@
   function loadBudgetForPeriod() {
     state.budget = state.budgets[periodKey(state.periodStart)] || { income: 0, obligations: [] };
   }
+  // Default a new expense's date to today when today falls inside the
+  // period being viewed; otherwise default to that period's start, so the
+  // expense lands in the period you're actually looking at.
+  function defaultExpenseDate() {
+    var start = state.periodStart;
+    var end = periodEndExclusive(start, state.payday);
+    var today = new Date(); today.setHours(0, 0, 0, 0);
+    if (today >= start && today < end) return todayISO();
+    return isoDate(start);
+  }
 
   function catById(id) {
     for (var i = 0; i < state.categories.length; i++) if (state.categories[i].id === id) return state.categories[i];
@@ -982,7 +992,7 @@
             var sel = isEdit ? existing.categoryId === c.id : i === 0;
             return '<div class="chip' + (sel ? " selected" : "") + '" data-cat="' + c.id + '"><span class="dot" style="background:' + c.color + '"></span>' + escapeHtml(c.name) + '</div>';
           }).join("") + '</div></div>' +
-        '<div class="field"><label>Дата</label><input type="date" id="f-date" value="' + (isEdit ? existing.date : todayISO()) + '"></div>' +
+        '<div class="field"><label>Дата</label><input type="date" id="f-date" value="' + (isEdit ? existing.date : defaultExpenseDate()) + '"></div>' +
         '<div class="field"><label>Бележка (по избор)</label><input id="f-note" placeholder="напр. обяд с колеги" value="' + (isEdit ? escapeHtml(existing.note || "") : "") + '"></div>' +
         '<div class="sheet-actions">' +
           (isEdit ? '<button class="btn danger" id="f-delete">Изтрий</button>' : '<button class="btn ghost" id="f-cancel">Отказ</button>') +

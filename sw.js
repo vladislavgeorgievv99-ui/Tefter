@@ -1,4 +1,4 @@
-var CACHE = "ledger-v6";
+var CACHE = "ledger-v7";
 var ASSETS = [
   "./",
   "./index.html",
